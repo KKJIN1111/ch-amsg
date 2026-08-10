@@ -1,39 +1,33 @@
+export const config = {
+  runtime: "edge"
+};
+
 const UPSTREAM = "https://sullyos-amsg.2462948308.workers.dev";
 
-export default async function handler(req, res) {
-  // 跨域固定配置
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS,PUT,DELETE");
-  res.setHeader("Access-Control-Allow-Headers", "*");
-
+export default async function handler(req) {
+  const origin = req.headers.get("origin") || "*";
+  // 预检OPTIONS请求直接快速响应，减少超时
   if (req.method === "OPTIONS") {
-    res.status(204).end();
-    return;
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Methods": "GET,POST,OPTIONS,PUT,DELETE",
+        "Access-Control-Allow-Headers": "*",
+        "Access-Control-Max-Age": "86400"
+      }
+    });
   }
 
-  try {
-    const urlObj = new URL(req.url, `http://${req.headers.host}`);
-    const targetUrl = new URL(urlObj.pathname + urlObj.search, UPSTREAM);
+  const res = await fetch(new URL(req.url, UPSTREAM), {
+    method: req.method,
+    headers: req.headers,
+    body: req.body
+  });
 
-    let fetchOpts = {
-      method: req.method,
-      headers: { ...req.headers, host: new URL(UPSTREAM).host }
-    };
-
-    // 安全处理请求体，规避Vercel流式读取报错
-    if (!["GET", "HEAD"].includes(req.method)) {
-      const chunks = [];
-      for await (const chunk of req) chunks.push(chunk);
-      if (chunks.length) fetchOpts.body = Buffer.concat(chunks);
-    }
-
-    const resp = await fetch(targetUrl, fetchOpts);
-    res.statusCode = resp.status;
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    const text = await resp.text();
-    return res.send(text);
-  } catch (e) {
-    console.error(e);
-    res.status(502).json({ msg: "上游连接失败", err: String(e) });
-  }
+  const response = new Response(res.body, res);
+  response.headers.set("Access-Control-Allow-Origin", origin);
+  response.headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS,PUT,DELETE");
+  response.headers.set("Access-Control-Allow-Headers", "*");
+  return response;
 }
