@@ -1,47 +1,39 @@
 const UPSTREAM = "https://sullyos-amsg.2462948308.workers.dev";
 
 export default async function handler(req, res) {
-  // 全局跨域头配置
+  // 跨域固定配置
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS,PUT,DELETE");
   res.setHeader("Access-Control-Allow-Headers", "*");
 
-  // 处理OPTIONS预检请求
   if (req.method === "OPTIONS") {
-    return res.status(204).end();
+    res.status(204).end();
+    return;
   }
 
   try {
-    const baseUrl = `http://${req.headers.host}`;
-    const { pathname, search } = new URL(req.url, baseUrl);
-    const targetUrl = new URL(pathname + search, UPSTREAM);
+    const urlObj = new URL(req.url, `http://${req.headers.host}`);
+    const targetUrl = new URL(urlObj.pathname + urlObj.search, UPSTREAM);
 
-    // 处理POST请求体读取（Vercel专用兼容写法）
-    let body = undefined;
+    let fetchOpts = {
+      method: req.method,
+      headers: { ...req.headers, host: new URL(UPSTREAM).host }
+    };
+
+    // 安全处理请求体，规避Vercel流式读取报错
     if (!["GET", "HEAD"].includes(req.method)) {
-      const buffers = [];
-      for await (const chunk of req) buffers.push(chunk);
-      body = Buffer.concat(buffers);
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      if (chunks.length) fetchOpts.body = Buffer.concat(chunks);
     }
 
-    // 转发请求
-    const upstreamRes = await fetch(targetUrl, {
-      method: req.method,
-      headers: {
-        ...req.headers,
-        host: new URL(UPSTREAM).host
-      },
-      body
-    });
-
-    // 透传响应
-    const resText = await upstreamRes.text();
-    res.statusCode = upstreamRes.status;
-    upstreamRes.headers.forEach((v, k) => res.setHeader(k, v));
+    const resp = await fetch(targetUrl, fetchOpts);
+    res.statusCode = resp.status;
     res.setHeader("Access-Control-Allow-Origin", "*");
-    return res.send(resText);
-  } catch (err) {
-    console.error(err);
-    return res.status(502).json({ error: "上游Worker连接失败", detail: err.message });
+    const text = await resp.text();
+    return res.send(text);
+  } catch (e) {
+    console.error(e);
+    res.status(502).json({ msg: "上游连接失败", err: String(e) });
   }
 }
