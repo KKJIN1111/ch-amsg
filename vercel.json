@@ -1,5 +1,3 @@
 {
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/api/proxy" }
-  ]
+  "rewrites": [{ "source": "/(.*)", "destination": "/api/proxy" }]
 }
